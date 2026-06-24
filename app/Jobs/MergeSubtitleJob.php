@@ -32,6 +32,7 @@ class MergeSubtitleJob implements ShouldQueue
         MergeSubtitleService $mergeService,
         TranslationService $translationService,
         SrtGeneratorService $srtService,
+        \App\Services\VttGeneratorService $vttService,
     ): void {
         $videoId = $this->video->id;
 
@@ -45,8 +46,13 @@ class MergeSubtitleJob implements ShouldQueue
 
             // Step 2: Generate SRT for original language (English)
             Log::info("MergeSubtitleJob: Generating SRT for original (en) for video_id={$videoId}");
-            $srtService->generate($videoId, 'en', 'original');
+            $srtPath = $srtService->generate($videoId, 'en', 'original');
             Log::info("MergeSubtitleJob: SRT generated for original (en) for video_id={$videoId}");
+
+            // Step 2.5: Generate VTT for original language
+            Log::info("MergeSubtitleJob: Generating VTT for original (en) for video_id={$videoId}");
+            $vttService->generateFromSrt($srtPath);
+            Log::info("MergeSubtitleJob: VTT generated for original (en) for video_id={$videoId}");
 
             // Step 3: Translate if target language differs from English
             if ($this->video->target_language !== 'en') {
@@ -56,8 +62,13 @@ class MergeSubtitleJob implements ShouldQueue
 
                 // Step 4: Generate SRT for translated language
                 Log::info("MergeSubtitleJob: Generating SRT for translated ({$this->video->target_language}) for video_id={$videoId}");
-                $srtService->generate($videoId, $this->video->target_language, 'translated');
+                $srtPathTranslated = $srtService->generate($videoId, $this->video->target_language, 'translated');
                 Log::info("MergeSubtitleJob: SRT generated for translated ({$this->video->target_language}) for video_id={$videoId}");
+
+                // Step 4.5: Generate VTT for translated language
+                Log::info("MergeSubtitleJob: Generating VTT for translated ({$this->video->target_language}) for video_id={$videoId}");
+                $vttService->generateFromSrt($srtPathTranslated);
+                Log::info("MergeSubtitleJob: VTT generated for translated ({$this->video->target_language}) for video_id={$videoId}");
             }
 
             // Step 5: Mark video as done

@@ -245,7 +245,10 @@
     </style>
 </head>
 <body>
-    <div class="brand">Subtitle Generator</div>
+    <div class="brand" style="display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 520px;">
+        <span>Subtitle Generator</span>
+        <a href="{{ route('video.index') }}" style="color: #6b7280; text-decoration: none; font-size: 12px; font-weight: 500;">View Library &rarr;</a>
+    </div>
 
     <div class="card">
         <div class="card-header">

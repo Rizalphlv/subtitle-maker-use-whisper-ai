@@ -50,8 +50,8 @@ class WhisperService
     public function __construct()
     {
         $this->apiKey       = config('services.groq.api_key') ?? env('GROQ_API_KEY');
-        $this->apiEndpoint  = config('services.groq.endpoint') ?? env('GROQ_ENDPOINT', 'https://api.groq.com/openai/v1');
-        $this->model        = config('services.groq.model') ?? env('GROQ_WHISPER_MODEL', 'whisper-large-v3');
+        $this->apiEndpoint  = config('services.groq.endpoint') ?? env('GROQ_ENDPOINT');
+        $this->model        = config('services.groq.model') ?? env('GROQ_WHISPER_MODEL');
 
         $this->openaiApiKey = config('services.openai.api_key') ?? env('OPENAI_API_KEY');
         $this->openaiEndpoint = config('services.openai.endpoint') ?? env('OPENAI_ENDPOINT', 'https://api.openai.com/v1');

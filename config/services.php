@@ -43,8 +43,8 @@ return [
 
     'groq' => [
         'api_key'   => env('GROQ_API_KEY'),
-        'endpoint'  => env('GROQ_ENDPOINT', 'https://api.groq.com/openai/v1'),
-        'model'     => env('GROQ_WHISPER_MODEL', 'whisper-large-v3'),
+        'endpoint'  => env('GROQ_ENDPOINT'),
+        'model'     => env('GROQ_WHISPER_MODEL'),
     ],
 
 ];
