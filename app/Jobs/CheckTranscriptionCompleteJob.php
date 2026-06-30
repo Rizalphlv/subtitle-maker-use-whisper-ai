@@ -48,7 +48,16 @@ class CheckTranscriptionCompleteJob implements ShouldQueue
 
             if ($chunks->isEmpty()) {
                 Log::error("CheckTranscriptionCompleteJob: No chunks found for video_id={$videoId}");
-                throw new \RuntimeException("No audio chunks found for video");
+                $this->video->update(['status' => 'failed']);
+                return;
+            }
+
+            // Check if any chunks failed
+            $failedCount = $chunks->where('status', 'failed')->count();
+            if ($failedCount > 0) {
+                Log::error("CheckTranscriptionCompleteJob: {$failedCount} chunks failed for video_id={$videoId}");
+                $this->video->update(['status' => 'failed']);
+                return;
             }
 
             // Count transcribed chunks
@@ -68,14 +77,6 @@ class CheckTranscriptionCompleteJob implements ShouldQueue
 
                 // Job completes successfully
                 return;
-            }
-
-            // Check if any chunks failed
-            $failedCount = $chunks->where('status', 'failed')->count();
-            if ($failedCount > 0) {
-                Log::error("CheckTranscriptionCompleteJob: {$failedCount} chunks failed for video_id={$videoId}");
-                $this->video->update(['status' => 'failed']);
-                throw new \RuntimeException("One or more chunks failed to transcribe");
             }
 
             // Still waiting for chunks to complete - requeue with backoff
