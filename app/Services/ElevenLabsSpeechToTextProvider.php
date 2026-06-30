@@ -99,7 +99,7 @@ class ElevenLabsSpeechToTextProvider implements SpeechToTextInterface
                 ->asMultipart()
                 ->attach('file', fopen($absolutePath, 'rb'), 'audio.mp3')
                 ->post($this->apiEndpoint, [
-                    'model_id' => 'eleven_monolingual_v1',
+                    'model_id' => $this->model,
                 ]);
 
             if (!$response->successful()) {
