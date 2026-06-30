@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -12,28 +11,13 @@ use Throwable;
 /**
  * WhisperService
  *
- * Wrapper around Groq's Whisper API for audio transcription.
+ * Wrapper around ElevenLabs Speech-to-Text (Scribe) for audio transcription.
  *
  * Responsibilities:
  *  1. Download audio chunk from MinIO
- *  2. Send to Whisper API
+ *  2. Send to ElevenLabs STT API
  *  3. Parse JSON response
- *  4. Extract segments with text and timing
- *
- * Expected Whisper API response:
- * {
- *   "text": "full transcription",
- *   "segments": [
- *     {
- *       "id": 0,
- *       "start": 0.0,
- *       "end": 2.5,
- *       "text": "Hello world"
- *     },
- *     ...
- *   ],
- *   "language": "en"
- * }
+ *  4. Extract normalized segments with text and timing
  */
 class WhisperService
 {
@@ -46,71 +30,61 @@ class WhisperService
 
     public function __construct()
     {
-        $this->apiKey       = config('services.groq.api_key') ?? env('GROQ_API_KEY');
-        $this->apiEndpoint  = config('services.groq.endpoint') ?? env('GROQ_ENDPOINT', 'https://api.groq.com/openai/v1');
-        $this->model        = config('services.groq.model') ?? env('GROQ_WHISPER_MODEL', 'whisper-large-v3');
+        $this->apiKey = config('services.elevenlabs.api_key') ?? env('ELEVENLABS_API_KEY');
+        $this->apiEndpoint = rtrim(config('services.elevenlabs.endpoint') ?? env('ELEVENLABS_STT_ENDPOINT', 'https://api.elevenlabs.io/v1/speech-to-text'), '/');
+        $this->model = config('services.elevenlabs.model') ?? env('ELEVENLABS_STT_MODEL', 'scribe_v1');
 
         if (!$this->apiKey) {
-            throw new RuntimeException('GROQ_API_KEY not configured. Set GROQ_API_KEY environment variable.');
+            throw new RuntimeException('ELEVENLABS_API_KEY not configured. Set ELEVENLABS_API_KEY environment variable.');
         }
     }
 
     /**
-     * Transcribe an audio chunk from MinIO using Whisper API.
+     * Transcribe an audio chunk from MinIO using ElevenLabs Scribe.
      *
-     * @param string $audioMinioPath  MinIO path to audio chunk
+     * @param string $audioMinioPath MinIO path to audio chunk
      *
-     * @return array  Segments array: [["start" => 0.0, "end" => 2.5, "text" => "..."], ...]
+     * @return array Segments array: [["start" => 0.0, "end" => 2.5, "text" => "..."], ...]
      *
-     * @throws RuntimeException  If API call fails or response is invalid.
+     * @throws RuntimeException If API call fails or response is invalid.
      */
     public function transcribe(string $audioMinioPath): array
     {
-        Log::info('WhisperService: starting transcription (translate to English)', [
+        Log::info('WhisperService: starting transcription via ElevenLabs Scribe', [
             'audio_path' => $audioMinioPath,
         ]);
 
-        $tempPath = "temp/whisper/chunk_" . uniqid() . ".mp3";
+        $tempPath = 'temp/whisper/chunk_' . uniqid() . '.mp3';
 
         try {
-            // 1. Download audio chunk to temp storage.
             $this->downloadAudioToTemp($audioMinioPath, $tempPath);
-
-            // 2. Call Groq Whisper translation API (auto-detect source, output English).
             $response = $this->callWhisperApi($tempPath);
-
-            // 3. Extract and validate segments.
             $segments = $this->extractSegments($response);
 
             Log::info('WhisperService: transcription complete', [
-                'audio_path'   => $audioMinioPath,
+                'audio_path' => $audioMinioPath,
                 'segment_count' => count($segments),
             ]);
 
             return $segments;
-
         } catch (Throwable $e) {
             Log::error('WhisperService: transcription failed', [
                 'audio_path' => $audioMinioPath,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
 
             throw $e;
-
         } finally {
-            // Clean up temp file.
             try {
                 Storage::disk(self::TEMP_DISK)->delete($tempPath);
             } catch (Throwable $e) {
                 Log::warning('WhisperService: failed to cleanup temp file', [
                     'temp_path' => $tempPath,
-                    'error'     => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
     }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
 
     private function downloadAudioToTemp(string $minioPath, string $tempPath): void
     {
@@ -123,95 +97,166 @@ class WhisperService
 
             Storage::disk(self::TEMP_DISK)->writeStream($tempPath, $stream);
             fclose($stream);
-
         } catch (Throwable $e) {
             throw new RuntimeException("Failed to download audio from MinIO: {$e->getMessage()}");
         }
     }
 
     /**
-     * Call Groq Whisper API with audio file.
+     * Call ElevenLabs Scribe API with audio file.
      *
-     * @return array  Parsed JSON response from Whisper API.
+     * @return array Parsed JSON response from the provider.
      *
-     * @throws RuntimeException  If API call fails.
+     * @throws RuntimeException If API call fails.
      */
     private function callWhisperApi(string $tempPath): array
     {
         try {
             $absolutePath = Storage::disk(self::TEMP_DISK)->path($tempPath);
 
-            Log::debug('WhisperService: calling Groq Whisper translation API', [
+            Log::debug('WhisperService: calling ElevenLabs Scribe API', [
                 'endpoint' => $this->apiEndpoint,
-                'model'    => $this->model,
+                'model' => $this->model,
             ]);
 
-            // Use /audio/translations so output is always English
-            // regardless of the source audio language.
             $response = Http::withHeaders([
-                'Authorization' => "Bearer {$this->apiKey}",
+                'xi-api-key' => $this->apiKey,
             ])
-            ->timeout(600) // 10 minute timeout for large files
-            ->asMultipart()
-            ->attach('file', fopen($absolutePath, 'rb'), 'audio.mp3')
-            ->post("{$this->apiEndpoint}/audio/translations", [
-                'model'           => $this->model,
-                'response_format' => 'verbose_json', // Includes detailed timing info
-            ]);
+                ->timeout(600)
+                ->asMultipart()
+                ->attach('file', fopen($absolutePath, 'rb'), 'audio.mp3')
+                ->post($this->apiEndpoint, [
+                    'model' => $this->model,
+                ]);
 
             if (!$response->successful()) {
                 $errorMsg = $response->json('error.message') ?? $response->body();
                 throw new RuntimeException(
-                    "Whisper API error ({$response->status()}): {$errorMsg}"
+                    "ElevenLabs STT error ({$response->status()}): {$errorMsg}"
                 );
             }
 
             return $response->json();
-
         } catch (Throwable $e) {
-            throw new RuntimeException("Failed to call Whisper API: {$e->getMessage()}");
+            throw new RuntimeException("Failed to call ElevenLabs STT API: {$e->getMessage()}");
         }
     }
 
     /**
-     * Extract segments from Whisper API response.
+     * Extract normalized segments from ElevenLabs response.
      *
-     * Validates that the response contains the expected structure and converts
-     * segment timing to the format expected by the rest of the system.
+     * ElevenLabs returns word-level tokens, so we convert those into the segment
+     * structure expected by the existing subtitle pipeline.
      *
-     * @return array  Normalized segments: [["start" => float, "end" => float, "text" => string], ...]
+     * @return array Normalized segments: [["start" => float, "end" => float, "text" => string], ...]
      */
     private function extractSegments(array $response): array
     {
-        if (!isset($response['segments']) || !is_array($response['segments'])) {
-            throw new RuntimeException(
-                "Invalid Whisper response: missing 'segments' array. Got: " . json_encode($response)
-            );
+        if (isset($response['words']) && is_array($response['words'])) {
+            return $this->extractSegmentsFromWords($response['words']);
         }
 
-        $segments = [];
+        if (isset($response['segments']) && is_array($response['segments'])) {
+            $segments = [];
 
-        foreach ($response['segments'] as $segment) {
-            if (!isset($segment['start'], $segment['end'], $segment['text'])) {
-                Log::warning('WhisperService: skipping segment with missing fields', [
-                    'segment' => $segment,
-                ]);
+            foreach ($response['segments'] as $segment) {
+                if (!isset($segment['start'], $segment['end'], $segment['text'])) {
+                    Log::warning('WhisperService: skipping segment with missing fields', [
+                        'segment' => $segment,
+                    ]);
+                    continue;
+                }
+
+                $segments[] = [
+                    'start' => (float) $segment['start'],
+                    'end' => (float) $segment['end'],
+                    'text' => (string) $segment['text'],
+                ];
+            }
+
+            if (empty($segments) && isset($response['text']) && is_string($response['text']) && trim($response['text']) !== '') {
+                return [[
+                    'start' => 0.0,
+                    'end' => 0.0,
+                    'text' => trim($response['text']),
+                ]];
+            }
+
+            return $segments;
+        }
+
+        if (isset($response['text']) && is_string($response['text']) && trim($response['text']) !== '') {
+            return [[
+                'start' => 0.0,
+                'end' => 0.0,
+                'text' => trim($response['text']),
+            ]];
+        }
+
+        throw new RuntimeException(
+            "Invalid ElevenLabs response: missing usable transcript data. Got: " . json_encode($response)
+        );
+    }
+
+    private function extractSegmentsFromWords(array $words): array
+    {
+        $segments = [];
+        $buffer = [];
+        $bufferStart = null;
+        $bufferEnd = null;
+
+        foreach ($words as $word) {
+            if (!is_array($word)) {
                 continue;
             }
 
+            $type = strtolower((string) ($word['type'] ?? 'word'));
+            if ($type !== 'word') {
+                continue;
+            }
+
+            $text = trim((string) ($word['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+
+            $start = isset($word['start']) ? (float) $word['start'] : 0.0;
+            $end = isset($word['end']) ? (float) $word['end'] : $start;
+
+            if ($bufferStart === null) {
+                $bufferStart = $start;
+                $bufferEnd = $end;
+                $buffer[] = $text;
+                continue;
+            }
+
+            if (($start - $bufferEnd) > 0.5) {
+                $segments[] = [
+                    'start' => (float) $bufferStart,
+                    'end' => (float) $bufferEnd,
+                    'text' => implode(' ', $buffer),
+                ];
+
+                $buffer = [$text];
+                $bufferStart = $start;
+                $bufferEnd = $end;
+                continue;
+            }
+
+            $buffer[] = $text;
+            $bufferEnd = $end;
+        }
+
+        if (!empty($buffer) && $bufferStart !== null && $bufferEnd !== null) {
             $segments[] = [
-                'start' => (float) $segment['start'],
-                'end'   => (float) $segment['end'],
-                'text'  => (string) $segment['text'],
+                'start' => (float) $bufferStart,
+                'end' => (float) $bufferEnd,
+                'text' => implode(' ', $buffer),
             ];
         }
 
-        // Allow empty segments (e.g., silent audio chunks at end of video with credits/silence)
-        // The merge process will skip chunks with no segments
         if (empty($segments)) {
-            Log::info('WhisperService: empty segments returned (likely silent/empty audio chunk)', [
-                'response_keys' => array_keys($response),
-            ]);
+            Log::info('WhisperService: no word-level segments created; returning empty transcript', []);
         }
 
         return $segments;
