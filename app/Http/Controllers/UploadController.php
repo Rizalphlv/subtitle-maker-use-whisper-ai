@@ -36,7 +36,12 @@ class UploadController extends Controller
     {
         $validated = $request->validate([
             'video' => 'required|file|mimes:mp4,avi,mov,mkv|max:5242880',  // 5GB max
+<<<<<<< HEAD
             'target_language' => 'sometimes|in:en',
+=======
+            'target_language' => 'required|in:en,id',
+            'source_language' => 'nullable|string|in:auto,ko,ja,th,zh',
+>>>>>>> c1ac1c3b3e6167fc4b2f826592671e4f6edd484d
             'filename' => 'nullable|string|max:255',
         ]);
 
@@ -72,7 +77,12 @@ class UploadController extends Controller
                 'original_name' => $originalName,
                 'total_chunks' => 0,  // Will be set by ProcessVideoJob
                 'status' => 'queued',  // Set to 'queued' for ProcessVideoJob
+<<<<<<< HEAD
                 'target_language' => 'en',
+=======
+                'target_language' => $validated['target_language'],
+                'source_language' => $validated['source_language'] ?? 'auto',
+>>>>>>> c1ac1c3b3e6167fc4b2f826592671e4f6edd484d
                 'minio_path' => $minioPath,
             ]);
 

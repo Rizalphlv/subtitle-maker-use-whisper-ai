@@ -94,6 +94,7 @@
             color: #e5e7eb;
             font-family: inherit;
             transition: border-color 0.15s, box-shadow 0.15s;
+            appearance: none;
         }
 
         input[type="file"]:focus,
@@ -286,6 +287,18 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label" for="source_language">Video Language (Source)</label>
+                <select id="source_language" name="source_language">
+                    <option value="auto">Auto Detect</option>
+                    <option value="ko">Korean (한국어)</option>
+                    <option value="ja">Japanese (日本語)</option>
+                    <option value="th">Thai (ไทย)</option>
+                    <option value="zh">Chinese (中文)</option>
+                </select>
+                <div class="form-hint">Selecting the original language helps Groq AI translate to English more accurately.</div>
+            </div>
+
+            <div class="form-group">
                 <label class="form-label" for="filename">Video Name <span style="color:#4b5563;font-weight:400">(optional)</span></label>
                 <input
                     type="text"
@@ -319,7 +332,7 @@
         <div class="usage-bar-bg">
             <div class="usage-bar-fill"></div>
         </div>
-        <div class="usage-desc">Whisper API Limit: 7,200 sec/hour | 28,800 sec/day (Resets daily)</div>
+        <div class="usage-desc">Groq API Limit: 7,200 sec/hour | 28,800 sec/day (Resets daily)</div>
     </div>
 
     <div class="footer-note">Subtitles are generated in English</div>

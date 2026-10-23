@@ -11,6 +11,7 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+<<<<<<< HEAD
     ->withMiddleware(function (Middleware $middleware) {
         //
     })
@@ -18,3 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->create();
+=======
+    ->withMiddleware(function (Middleware $middleware): void {
+        //
+    })
+    ->withExceptions(function (Exceptions $exceptions): void {
+        //
+    })->create();
+>>>>>>> c1ac1c3b3e6167fc4b2f826592671e4f6edd484d
