@@ -19,22 +19,23 @@ class SrtGeneratorService
 
     /**
      * Generate SRT file from merged subtitle and store in MinIO.
-     * 
+     *
      * SRT Format:
      * ```
      * 1
      * 00:00:01,000 --> 00:00:03,000
      * Hello world
-     * 
+     *
      * 2
      * 00:00:03,500 --> 00:00:05,000
      * Second subtitle
      * ```
-     * 
-     * @param int $videoId Video ID
-     * @param string $language Language code (e.g., 'en', 'id')
-     * @param string $type Subtitle type (original/translated)
+     *
+     * @param  int  $videoId  Video ID
+     * @param  string  $language  Language code (e.g., 'en', 'id')
+     * @param  string  $type  Subtitle type (original/translated)
      * @return string MinIO path where SRT was stored
+     *
      * @throws RuntimeException If generation fails
      */
     public function generate(
@@ -122,14 +123,14 @@ class SrtGeneratorService
 
     /**
      * Build SRT content from segments.
-     * 
+     *
      * ⚠️ CRITICAL: SRT Format Compliance
      * - Sequence numbers (1, 2, 3, ...)
      * - Timestamps: HH:MM:SS,mmm --> HH:MM:SS,mmm
      * - Text content
      * - Blank line between entries
-     * 
-     * @param array $segments Normalized segments
+     *
+     * @param  array  $segments  Normalized segments
      * @return string SRT content
      */
     protected function buildSrtContent(array $segments): string
@@ -138,7 +139,7 @@ class SrtGeneratorService
 
         foreach ($segments as $segment) {
             // Sequence number
-            $lines[] = (string)$segment['index'];
+            $lines[] = (string) $segment['index'];
 
             // Timestamps
             $startTime = $this->normalizer->secondsToSrtTime($segment['start']);
@@ -157,24 +158,26 @@ class SrtGeneratorService
 
         // Join with newlines and remove trailing blank line
         $content = implode("\n", $lines);
-        return rtrim($content) . "\n";  // Ensure file ends with newline
+
+        return rtrim($content)."\n";  // Ensure file ends with newline
     }
 
     /**
      * Build MinIO path for SRT file.
-     * 
+     *
      * Path structure:
      * /videos/{video_id}/subtitles/original.srt
      * /videos/{video_id}/subtitles/{language}_translated.srt
-     * 
-     * @param int $videoId Video ID
-     * @param string $language Language code
-     * @param string $type Subtitle type
+     *
+     * @param  int  $videoId  Video ID
+     * @param  string  $language  Language code
+     * @param  string  $type  Subtitle type
      * @return string MinIO path
      */
     protected function buildMinionPath(int $videoId, string $language, string $type): string
     {
-        if ($type === 'original') {
+        // English is the public final artifact, so keep the stable download path.
+        if ($language === 'en') {
             return "videos/{$videoId}/subtitles/{$language}.srt";
         }
 
@@ -184,9 +187,10 @@ class SrtGeneratorService
 
     /**
      * Get SRT content from MinIO.
-     * 
-     * @param string $minioPath MinIO path to SRT file
+     *
+     * @param  string  $minioPath  MinIO path to SRT file
      * @return string SRT content
+     *
      * @throws RuntimeException If file not found
      */
     public function getSrtContent(string $minioPath): string
@@ -202,9 +206,8 @@ class SrtGeneratorService
 
     /**
      * Validate SRT content format.
-     * 
-     * @param string $content SRT content
-     * @return bool
+     *
+     * @param  string  $content  SRT content
      */
     public function validateSrtContent(string $content): bool
     {
@@ -219,7 +222,7 @@ class SrtGeneratorService
 
         while ($i < count($lines)) {
             // Expect sequence number
-            if ((int)trim($lines[$i]) !== $currentIndex) {
+            if ((int) trim($lines[$i]) !== $currentIndex) {
                 return false;
             }
             $i++;
@@ -230,7 +233,7 @@ class SrtGeneratorService
 
             // Expect timestamp line
             $timestampLine = trim($lines[$i]);
-            if (!preg_match('/^\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}$/', $timestampLine)) {
+            if (! preg_match('/^\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}$/', $timestampLine)) {
                 return false;
             }
             $i++;
@@ -260,10 +263,10 @@ class SrtGeneratorService
 
     /**
      * Parse SRT content to extract segments.
-     * 
+     *
      * Useful for validation or debugging.
-     * 
-     * @param string $content SRT content
+     *
+     * @param  string  $content  SRT content
      * @return array Parsed segments
      */
     public function parseSrtContent(string $content): array
@@ -278,11 +281,12 @@ class SrtGeneratorService
             // Skip blank lines
             if (empty($line)) {
                 $i++;
+
                 continue;
             }
 
             // Index
-            $index = (int)$line;
+            $index = (int) $line;
             $i++;
 
             if ($i >= count($lines)) {
@@ -292,8 +296,8 @@ class SrtGeneratorService
             // Timestamp
             $timestampLine = trim($lines[$i]);
             preg_match('/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2}),(\d{3})/', $timestampLine, $matches);
-            $startSeconds = (int)$matches[1] * 3600 + (int)$matches[2] * 60 + (int)$matches[3] + (int)$matches[4] / 1000;
-            $endSeconds = (int)$matches[5] * 3600 + (int)$matches[6] * 60 + (int)$matches[7] + (int)$matches[8] / 1000;
+            $startSeconds = (int) $matches[1] * 3600 + (int) $matches[2] * 60 + (int) $matches[3] + (int) $matches[4] / 1000;
+            $endSeconds = (int) $matches[5] * 3600 + (int) $matches[6] * 60 + (int) $matches[7] + (int) $matches[8] / 1000;
             $i++;
 
             if ($i >= count($lines)) {

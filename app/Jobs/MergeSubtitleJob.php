@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Video;
+use App\Services\ContextualTranslationService;
 use App\Services\MergeSubtitleService;
 use App\Services\SrtGeneratorService;
 use Illuminate\Bus\Queueable;
@@ -30,6 +31,7 @@ class MergeSubtitleJob implements ShouldQueue
 
     public function handle(
         MergeSubtitleService $mergeService,
+        ContextualTranslationService $translationService,
         SrtGeneratorService $srtService,
     ): void {
         $videoId = $this->video->id;
@@ -39,11 +41,12 @@ class MergeSubtitleJob implements ShouldQueue
         try {
             // Step 1: Merge all chunk subtitles into a single source-language subtitle.
             Log::info("MergeSubtitleJob: Merging subtitles for video_id={$videoId}");
-            $mergeService->merge($videoId, 'en', 'original');
+            $sourceSubtitle = $mergeService->merge($videoId, 'source', 'original');
             Log::info("MergeSubtitleJob: Merge complete for video_id={$videoId}");
 
-            // Step 2: Whisper already translated each chunk to English.
-            $srtService->generate($videoId, 'en', 'original');
+            // Step 2: Translate the complete timeline with context and durable batch checkpoints.
+            $translationService->translate($videoId, $sourceSubtitle->raw_transcript ?? []);
+            $srtService->generate($videoId, 'en', 'translated');
             Log::info("MergeSubtitleJob: English SRT generated for video_id={$videoId}");
 
             // Step 3: Mark video as done

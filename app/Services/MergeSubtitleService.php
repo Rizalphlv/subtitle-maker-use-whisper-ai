@@ -19,16 +19,17 @@ class MergeSubtitleService
 
     /**
      * Merge all chunk transcripts into a single subtitle record.
-     * 
+     *
      * ⚠️ CRITICAL: Subtitle Merge Logic
      * - Apply offset (handled by SubtitleNormalizerService)
      * - Sort globally (handled by SubtitleNormalizerService)
      * - Re-index (handled by SubtitleNormalizerService)
-     * 
-     * @param int $videoId Video ID
-     * @param string $language Language code (e.g., 'en', 'id')
-     * @param string $type Type of subtitle (original/translated)
+     *
+     * @param  int  $videoId  Video ID
+     * @param  string  $language  Language code (e.g., 'en', 'id')
+     * @param  string  $type  Type of subtitle (original/translated)
      * @return Subtitle Merged subtitle record
+     *
      * @throws RuntimeException If merge fails
      */
     public function merge(int $videoId, string $language = 'en', string $type = 'original'): Subtitle
@@ -89,10 +90,10 @@ class MergeSubtitleService
             [
                 'video_id' => $videoId,
                 'chunk_index' => -1,  // -1 = merged record marker
-                'language' => $storedLanguage,
                 'type' => $type,
             ],
             [
+                'language' => $storedLanguage,
                 'raw_transcript' => $mergedSegments,
                 'status' => 'transcribed',
             ]
@@ -123,7 +124,7 @@ class MergeSubtitleService
             ->orderBy('chunk_index')
             ->first();
 
-        if ($detectedSubtitle && !empty($detectedSubtitle->language)) {
+        if ($detectedSubtitle && ! empty($detectedSubtitle->language)) {
             return $detectedSubtitle->language;
         }
 
@@ -132,8 +133,9 @@ class MergeSubtitleService
 
     /**
      * Validate merged timeline for issues.
-     * 
-     * @param array $segments Normalized segments
+     *
+     * @param  array  $segments  Normalized segments
+     *
      * @throws RuntimeException If critical validation fails
      */
     protected function validateTimeline(array $segments): void
@@ -153,7 +155,7 @@ class MergeSubtitleService
             $gap = $next['start'] - $current['end'];
             if ($gap > 0.1) {  // Allow 100ms tolerance
                 $gaps[] = [
-                    'between_index' => $current['index'] . '-' . $next['index'],
+                    'between_index' => $current['index'].'-'.$next['index'],
                     'gap_seconds' => round($gap, 3),
                 ];
             }
@@ -161,21 +163,21 @@ class MergeSubtitleService
             // Check for overlap (next starts before current ends)
             if ($next['start'] < $current['end'] - 0.01) {  // Allow 10ms tolerance
                 $overlaps[] = [
-                    'between_index' => $current['index'] . '-' . $next['index'],
+                    'between_index' => $current['index'].'-'.$next['index'],
                     'overlap_seconds' => round($current['end'] - $next['start'], 3),
                 ];
             }
         }
 
         // Log gaps and overlaps (non-critical)
-        if (!empty($gaps)) {
+        if (! empty($gaps)) {
             Log::warning('MergeSubtitleService: gaps detected in timeline', [
                 'gap_count' => count($gaps),
                 'gaps' => $gaps,
             ]);
         }
 
-        if (!empty($overlaps)) {
+        if (! empty($overlaps)) {
             Log::warning('MergeSubtitleService: overlaps detected in timeline', [
                 'overlap_count' => count($overlaps),
                 'overlaps' => $overlaps,
@@ -185,11 +187,6 @@ class MergeSubtitleService
 
     /**
      * Get merged subtitle for a video (convenience method).
-     * 
-     * @param int $videoId
-     * @param string $language
-     * @param string $type
-     * @return Subtitle|null
      */
     public function getMerged(int $videoId, string $language = 'en', string $type = 'original'): ?Subtitle
     {
@@ -202,33 +199,27 @@ class MergeSubtitleService
 
     /**
      * Get segment count for merged subtitle.
-     * 
-     * @param int $videoId
-     * @param string $language
-     * @return int
      */
     public function getSegmentCount(int $videoId, string $language = 'en'): int
     {
         $merged = $this->getMerged($videoId, $language);
+
         return $merged ? count($merged->raw_transcript ?? []) : 0;
     }
 
     /**
      * Get total duration of merged subtitle in seconds.
-     * 
-     * @param int $videoId
-     * @param string $language
-     * @return float
      */
     public function getTotalDuration(int $videoId, string $language = 'en'): float
     {
         $merged = $this->getMerged($videoId, $language);
-        if (!$merged || empty($merged->raw_transcript)) {
+        if (! $merged || empty($merged->raw_transcript)) {
             return 0.0;
         }
 
         $segments = is_array($merged->raw_transcript) ? $merged->raw_transcript : $merged->raw_transcript->toArray();
         $lastSegment = end($segments);
+
         return $lastSegment['end'] ?? 0.0;
     }
 }

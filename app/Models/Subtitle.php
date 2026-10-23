@@ -15,6 +15,7 @@ class Subtitle extends Model
         'path',
         'type',
         'status',
+        'source_hash',
     ];
 
     protected $casts = [

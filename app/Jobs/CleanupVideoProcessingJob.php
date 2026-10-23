@@ -74,7 +74,7 @@ class CleanupVideoProcessingJob implements ShouldQueue
         $finalSubtitle = Subtitle::where('video_id', $videoId)
             ->where('chunk_index', -1)
             ->where('language', 'en')
-            ->where('type', 'original')
+            ->where('type', 'translated')
             ->first();
 
         if (! $finalSubtitle || ! $finalSubtitle->path) {

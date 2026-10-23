@@ -31,7 +31,7 @@ class CleanupVideoProcessingJobTest extends TestCase
         Subtitle::create([
             'video_id' => $video->id, 'chunk_index' => -1, 'language' => 'en',
             'raw_transcript' => [['index' => 1, 'start' => 0, 'end' => 1, 'text' => 'Hi']],
-            'path' => $path, 'type' => 'original', 'status' => 'transcribed',
+            'path' => $path, 'type' => 'translated', 'status' => 'transcribed',
         ]);
         Storage::disk('minio')->put($chunk->path, 'audio');
         Storage::disk('minio')->put($path, 'subtitle');

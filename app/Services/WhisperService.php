@@ -11,7 +11,7 @@ use Throwable;
 /**
  * WhisperService
  *
- * Translates multilingual audio directly to timestamped English segments.
+ * Transcribes multilingual audio in its source language with timestamps.
  */
 class WhisperService implements SpeechToTextInterface
 {
@@ -44,7 +44,7 @@ class WhisperService implements SpeechToTextInterface
                 throw new RuntimeException("Cannot read temporary audio file: {$path}");
             }
 
-            $endpoint = rtrim((string) config('services.openai.endpoint'), '/').'/audio/translations';
+            $endpoint = rtrim((string) config('services.openai.endpoint'), '/').'/audio/transcriptions';
             $payload = [
                 'model' => (string) config('services.openai.model', 'whisper-1'),
                 'response_format' => 'verbose_json',
@@ -57,7 +57,6 @@ class WhisperService implements SpeechToTextInterface
 
             $response = Http::withToken($apiKey)
                 ->timeout((int) config('services.openai.timeout', 600))
-                ->retry(2, 1000, throw: false)
                 ->attach('file', $audio, basename($path))
                 ->post($endpoint, $payload);
 
@@ -82,9 +81,12 @@ class WhisperService implements SpeechToTextInterface
                 throw new RuntimeException('OpenAI Whisper returned text without usable timestamps.');
             }
 
-            return ['segments' => $segments, 'language' => 'en'];
+            return [
+                'segments' => $segments,
+                'language' => trim((string) $response->json('language', 'source')) ?: 'source',
+            ];
         } catch (Throwable $e) {
-            Log::error('WhisperService: translation failed', ['error' => $e->getMessage()]);
+            Log::error('WhisperService: transcription failed', ['error' => $e->getMessage()]);
             throw $e;
         } finally {
             Storage::disk('local')->delete($tempPath);

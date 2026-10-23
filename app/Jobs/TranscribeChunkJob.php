@@ -105,15 +105,15 @@ class TranscribeChunkJob implements ShouldQueue
                 'segment_count' => count($segments),
             ]);
 
-            // The translations endpoint always returns English.
+            // A stable marker lets chunks with mixed/variant language detection merge together.
             $subtitle = Subtitle::updateOrCreate(
                 [
                     'video_id' => $this->audioChunk->video_id,
                     'chunk_index' => $this->audioChunk->chunk_index,
-                    'language' => 'en',
                     'type' => 'original',
                 ],
                 [
+                    'language' => 'source',
                     'raw_transcript' => $segments,
                     'status' => 'transcribed',
                 ]

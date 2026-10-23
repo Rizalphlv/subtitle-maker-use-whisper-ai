@@ -8,6 +8,7 @@ use App\Jobs\TranscribeChunkJob;
 use App\Models\AudioChunk;
 use App\Models\Subtitle;
 use App\Models\Video;
+use App\Services\ContextualTranslationService;
 use App\Services\MergeSubtitleService;
 use App\Services\SrtGeneratorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -31,13 +32,24 @@ class SubtitlePipelineTest extends TestCase
         ]);
 
         Http::fake([
-            'https://api.openai.test/v1/audio/translations' => Http::response([
+            'https://api.openai.test/v1/audio/transcriptions' => Http::response([
                 'language' => 'zh',
-                'text' => 'Welcome. Thank you.',
+                'text' => '欢迎。谢谢。',
                 'segments' => [
-                    ['start' => 0.25, 'end' => 1.80, 'text' => 'Welcome.'],
-                    ['start' => 2.10, 'end' => 3.40, 'text' => 'Thank you.'],
+                    ['start' => 0.25, 'end' => 1.80, 'text' => '欢迎。'],
+                    ['start' => 2.10, 'end' => 3.40, 'text' => '谢谢。'],
                 ],
+            ]),
+            'https://api.openai.test/v1/responses' => Http::response([
+                'output' => [[
+                    'content' => [[
+                        'type' => 'output_text',
+                        'text' => json_encode(['translations' => [
+                            ['index' => 1, 'text' => 'Welcome.'],
+                            ['index' => 2, 'text' => 'Thank you.'],
+                        ]]),
+                    ]],
+                ]],
             ]),
         ]);
 
@@ -62,6 +74,7 @@ class SubtitlePipelineTest extends TestCase
         (new TranscribeChunkJob($chunk))->handle();
         (new MergeSubtitleJob($video))->handle(
             app(MergeSubtitleService::class),
+            app(ContextualTranslationService::class),
             app(SrtGeneratorService::class),
         );
 
@@ -69,7 +82,7 @@ class SubtitlePipelineTest extends TestCase
         $subtitle = Subtitle::where('video_id', $video->id)
             ->where('chunk_index', -1)
             ->where('language', 'en')
-            ->where('type', 'original')
+            ->where('type', 'translated')
             ->firstOrFail();
 
         $this->assertSame('done', $video->status);
@@ -79,6 +92,7 @@ class SubtitlePipelineTest extends TestCase
             Storage::disk('minio')->get($subtitle->path),
         );
         Queue::assertPushed(CleanupVideoProcessingJob::class);
+        Http::assertSentCount(2);
 
         $this->get(route('upload.download', ['uploadId' => $video->upload_id]))
             ->assertOk()
