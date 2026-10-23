@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\ProcessVideoJob;
 use App\Models\Video;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -16,8 +17,8 @@ class UploadController extends Controller
      */
     public function create()
     {
-        $cacheKey = 'whisper_daily_usage_' . date('Y-m-d');
-        $usageSeconds = \Illuminate\Support\Facades\Cache::get($cacheKey, 0);
+        $cacheKey = 'whisper_daily_usage_'.date('Y-m-d');
+        $usageSeconds = Cache::get($cacheKey, 0);
         $dailyLimit = 28800;
         $percentage = min(100, max(0, ($usageSeconds / $dailyLimit) * 100));
 
@@ -35,7 +36,7 @@ class UploadController extends Controller
     {
         $validated = $request->validate([
             'video' => 'required|file|mimes:mp4,avi,mov,mkv|max:5242880',  // 5GB max
-            'target_language' => 'required|in:en,id',
+            'target_language' => 'sometimes|in:en',
             'filename' => 'nullable|string|max:255',
         ]);
 
@@ -71,7 +72,7 @@ class UploadController extends Controller
                 'original_name' => $originalName,
                 'total_chunks' => 0,  // Will be set by ProcessVideoJob
                 'status' => 'queued',  // Set to 'queued' for ProcessVideoJob
-                'target_language' => $validated['target_language'],
+                'target_language' => 'en',
                 'minio_path' => $minioPath,
             ]);
 
@@ -89,9 +90,10 @@ class UploadController extends Controller
 
             if ($request->expectsJson()) {
                 $request->session()->flash('success', 'Video uploaded successfully! Processing has started.');
+
                 return response()->json([
                     'success' => true,
-                    'redirect_url' => route('upload.status', ['uploadId' => $uploadId])
+                    'redirect_url' => route('upload.status', ['uploadId' => $uploadId]),
                 ]);
             }
 
@@ -108,11 +110,11 @@ class UploadController extends Controller
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Upload failed: ' . $exception->getMessage()
+                    'message' => 'Upload failed: '.$exception->getMessage(),
                 ], 500);
             }
 
-            return back()->withError('Upload failed: ' . $exception->getMessage());
+            return back()->withError('Upload failed: '.$exception->getMessage());
         }
     }
 
@@ -169,19 +171,11 @@ class UploadController extends Controller
         }
 
         try {
-            // Determine which SRT file to download (original or translated)
-            $language = $request->query('lang', $video->target_language);
-            $type = $language !== 'en' && $language !== $video->target_language ? 'translated' : 'original';
-
-            // Construct MinIO path
-            if ($type === 'translated') {
-                $minioPath = "videos/{$video->id}/subtitles/{$language}_translated.srt";
-            } else {
-                $minioPath = "videos/{$video->id}/subtitles/{$language}.srt";
-            }
+            $language = 'en';
+            $minioPath = "videos/{$video->id}/subtitles/en.srt";
 
             // Verify file exists
-            if (!Storage::disk('minio')->exists($minioPath)) {
+            if (! Storage::disk('minio')->exists($minioPath)) {
                 return back()->withError('Subtitle file not found.');
             }
 
@@ -189,9 +183,8 @@ class UploadController extends Controller
             $content = Storage::disk('minio')->get($minioPath);
 
             // Determine filename
-            $languageName = $language === 'id' ? 'Indonesian' : 'English';
-            $typeLabel = $type === 'translated' ? '_translated' : '';
-            $filename = pathinfo($video->filename, PATHINFO_FILENAME) . "_{$languageName}{$typeLabel}.srt";
+            $languageName = 'English';
+            $filename = pathinfo($video->filename, PATHINFO_FILENAME)."_{$languageName}.srt";
 
             Log::info('UploadController: Subtitle downloaded', [
                 'video_id' => $video->id,
@@ -201,7 +194,7 @@ class UploadController extends Controller
 
             // Return file download
             return response()->streamDownload(
-                fn() => print($content),
+                fn () => print ($content),
                 $filename,
                 [
                     'Content-Type' => 'application/x-subrip',
@@ -215,7 +208,7 @@ class UploadController extends Controller
                 'error' => $exception->getMessage(),
             ]);
 
-            return back()->withError('Download failed: ' . $exception->getMessage());
+            return back()->withError('Download failed: '.$exception->getMessage());
         }
     }
 }

@@ -20,6 +20,7 @@ class CleanupVideoProcessingJob implements ShouldQueue
     protected Video $video;
 
     public $tries = 3;
+
     public $timeout = 600;  // 10 minutes (cleanup should be quick)
 
     public function __construct(Video $video)
@@ -70,47 +71,29 @@ class CleanupVideoProcessingJob implements ShouldQueue
     {
         $this->video->refresh();
 
-        // Check original language subtitle
-        $originalSubtitle = Subtitle::where('video_id', $videoId)
+        $finalSubtitle = Subtitle::where('video_id', $videoId)
             ->where('chunk_index', -1)
+            ->where('language', 'en')
             ->where('type', 'original')
             ->first();
 
-        if (!$originalSubtitle || !$originalSubtitle->path) {
-            throw new \RuntimeException("Original subtitle not found for video_id={$videoId}");
+        if (! $finalSubtitle || ! $finalSubtitle->path) {
+            throw new \RuntimeException("Final subtitle not found for video_id={$videoId}");
         }
 
-        if (!Storage::disk('minio')->exists($originalSubtitle->path)) {
-            throw new \RuntimeException("Original subtitle file missing in MinIO: {$originalSubtitle->path}");
+        if (! Storage::disk('minio')->exists($finalSubtitle->path)) {
+            throw new \RuntimeException("Final subtitle file missing in MinIO: {$finalSubtitle->path}");
         }
 
-        Log::info("CleanupVideoProcessingJob: Verified original subtitle", [
+        Log::info('CleanupVideoProcessingJob: Verified final subtitle', [
             'video_id' => $videoId,
-            'path' => $originalSubtitle->path,
-            'size' => Storage::disk('minio')->size($originalSubtitle->path),
+            'language' => $finalSubtitle->language,
+            'type' => $finalSubtitle->type,
+            'path' => $finalSubtitle->path,
+            'size' => Storage::disk('minio')->size($finalSubtitle->path),
         ]);
 
-        // Check translated subtitle if target language is not English
-        if ($this->video->target_language !== 'en') {
-            $translatedSubtitle = Subtitle::where('video_id', $videoId)
-                ->where('chunk_index', -1)
-                ->where('type', 'translated')
-                ->first();
-
-            if (!$translatedSubtitle || !$translatedSubtitle->path) {
-                throw new \RuntimeException("Translated subtitle not found for video_id={$videoId}");
-            }
-
-            if (!Storage::disk('minio')->exists($translatedSubtitle->path)) {
-                throw new \RuntimeException("Translated subtitle file missing in MinIO: {$translatedSubtitle->path}");
-            }
-
-            Log::info("CleanupVideoProcessingJob: Verified translated subtitle", [
-                'video_id' => $videoId,
-                'path' => $translatedSubtitle->path,
-                'size' => Storage::disk('minio')->size($translatedSubtitle->path),
-            ]);
-        }
+        // Keep merged original subtitle optional for diagnostics only.
     }
 
     /**
@@ -129,13 +112,13 @@ class CleanupVideoProcessingJob implements ShouldQueue
                     Storage::disk('minio')->delete($chunk->path);
                     $deletedCount++;
 
-                    Log::debug("CleanupVideoProcessingJob: Deleted chunk", [
+                    Log::debug('CleanupVideoProcessingJob: Deleted chunk', [
                         'video_id' => $videoId,
                         'chunk_index' => $chunk->chunk_index,
                         'path' => $chunk->path,
                     ]);
                 } catch (\Exception $e) {
-                    Log::warning("CleanupVideoProcessingJob: Failed to delete chunk", [
+                    Log::warning('CleanupVideoProcessingJob: Failed to delete chunk', [
                         'video_id' => $videoId,
                         'chunk_index' => $chunk->chunk_index,
                         'path' => $chunk->path,
@@ -151,24 +134,25 @@ class CleanupVideoProcessingJob implements ShouldQueue
 
     /**
      * Delete original audio file from MinIO.
-     * 
+     *
      * Note: Only call this if you're sure you don't need the audio anymore.
      * By default, this is not called.
      */
     protected function deleteOriginalAudio(int $videoId): void
     {
-        $audioPath = "videos/{$videoId}/audio.mp3";
+        $this->video->refresh();
+        $audioPath = "videos/{$this->video->upload_id}/audio.flac";
 
         if (Storage::disk('minio')->exists($audioPath)) {
             try {
                 Storage::disk('minio')->delete($audioPath);
 
-                Log::info("CleanupVideoProcessingJob: Deleted original audio", [
+                Log::info('CleanupVideoProcessingJob: Deleted original audio', [
                     'video_id' => $videoId,
                     'path' => $audioPath,
                 ]);
             } catch (\Exception $e) {
-                Log::warning("CleanupVideoProcessingJob: Failed to delete original audio", [
+                Log::warning('CleanupVideoProcessingJob: Failed to delete original audio', [
                     'video_id' => $videoId,
                     'error' => $e->getMessage(),
                 ]);
@@ -178,7 +162,7 @@ class CleanupVideoProcessingJob implements ShouldQueue
 
     /**
      * Delete original video file from MinIO.
-     * 
+     *
      * Note: Only call this if you're sure you don't need the video anymore.
      * By default, this is not called.
      */
@@ -190,12 +174,12 @@ class CleanupVideoProcessingJob implements ShouldQueue
             try {
                 Storage::disk('minio')->delete($this->video->minio_path);
 
-                Log::info("CleanupVideoProcessingJob: Deleted original video", [
+                Log::info('CleanupVideoProcessingJob: Deleted original video', [
                     'video_id' => $videoId,
                     'path' => $this->video->minio_path,
                 ]);
             } catch (\Exception $e) {
-                Log::warning("CleanupVideoProcessingJob: Failed to delete original video", [
+                Log::warning('CleanupVideoProcessingJob: Failed to delete original video', [
                     'video_id' => $videoId,
                     'error' => $e->getMessage(),
                 ]);

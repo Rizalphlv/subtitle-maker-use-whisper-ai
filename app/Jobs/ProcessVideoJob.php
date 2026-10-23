@@ -29,7 +29,6 @@ use Throwable;
  *   └─ CheckTranscriptionCompleteJob (polls until all chunks done)
  *      └─ MergeSubtitleJob (auto-dispatched when all transcribed)
  *         ├─ MergeSubtitleService
- *         ├─ TranslationService (if needed)
  *         └─ SrtGeneratorService
  */
 class ProcessVideoJob implements ShouldQueue

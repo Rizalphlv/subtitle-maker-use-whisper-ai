@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('video_id')->constrained()->cascadeOnDelete();
             $table->integer('chunk_index')->comment('Which audio chunk this transcription came from. Use -1 for merged records.');
-            $table->enum('language', ['en', 'id'])->default('en')->comment('Language of transcription');
+            $table->string('language', 20)->default('en')->comment('Language of transcription (e.g. en, id, th, auto)');
             $table->longText('raw_transcript')->nullable()->comment('Raw Whisper response (JSON segments with text & timing)');
             $table->string('path')->nullable()->comment('MinIO path to the final .srt file');
             $table->enum('type', ['original', 'translated'])->default('original');

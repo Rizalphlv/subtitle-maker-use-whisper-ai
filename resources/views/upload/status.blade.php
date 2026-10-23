@@ -237,6 +237,14 @@
     </style>
 </head>
 <body>
+    @php
+        $targetLanguageLabel = match ($video->target_language) {
+            'id' => 'Indonesian',
+            'en' => 'English',
+            default => strtoupper($video->target_language),
+        };
+    @endphp
+
     <div class="brand">Subtitle Generator</div>
 
     <div class="card">
@@ -257,7 +265,7 @@
             </div>
             <div class="meta-row">
                 <span class="meta-label">Output Language</span>
-                <span class="meta-value">English</span>
+                <span class="meta-value">{{ $targetLanguageLabel }}</span>
             </div>
             <div class="meta-row">
                 <span class="meta-label">Uploaded</span>
@@ -272,7 +280,7 @@
         <div class="download-section" id="downloadSection">
             <div class="divider"></div>
             <div class="action-group">
-                <a href="{{ route('upload.download', ['uploadId' => $uploadId, 'lang' => 'en']) }}" class="btn-primary">
+                <a href="{{ route('upload.download', ['uploadId' => $uploadId, 'lang' => $video->target_language]) }}" class="btn-primary">
                     Download Subtitle (.srt)
                 </a>
                 <a href="{{ route('upload.create') }}" class="btn-secondary">

@@ -25,33 +25,34 @@ use Throwable;
  *
  * Storage layout (MinIO):
  *   videos/{upload_id}/original.{ext}   ← input video
- *   videos/{upload_id}/audio.mp3         ← output audio
+ *   videos/{upload_id}/audio.flac        ← speech-optimized output audio
  */
 class AudioExtractionService
 {
     private const ASSET_DISK = 'minio';
+
     private const TEMP_DISK = 'local';
 
     /**
      * Extract audio from a video and store in MinIO.
      *
-     * @return string  MinIO path of the extracted audio.
+     * @return string MinIO path of the extracted audio.
      *
-     * @throws RuntimeException  If FFmpeg execution fails.
+     * @throws RuntimeException If FFmpeg execution fails.
      */
     public function extract(Video $video): string
     {
         Log::info('AudioExtractionService: starting extraction', [
-            'video_id'   => $video->id,
-            'upload_id'  => $video->upload_id,
+            'video_id' => $video->id,
+            'upload_id' => $video->upload_id,
             'minio_path' => $video->minio_path,
         ]);
 
         $uploadId = $video->upload_id;
-        $tempDir  = $this->getTempDir($uploadId);
-        $inputPath  = "{$tempDir}/input_video";
-        $outputPath = "{$tempDir}/audio.mp3";
-        $minioAudioPath = "videos/{$uploadId}/audio.mp3";
+        $tempDir = $this->getTempDir($uploadId);
+        $inputPath = "{$tempDir}/input_video";
+        $outputPath = "{$tempDir}/audio.flac";
+        $minioAudioPath = "videos/{$uploadId}/audio.flac";
 
         try {
             // 1. Download video from MinIO to temp storage.
@@ -64,7 +65,7 @@ class AudioExtractionService
             $this->uploadAudioToMinio($outputPath, $minioAudioPath);
 
             Log::info('AudioExtractionService: extraction complete', [
-                'video_id'        => $video->id,
+                'video_id' => $video->id,
                 'minio_audio_path' => $minioAudioPath,
             ]);
 
@@ -72,12 +73,11 @@ class AudioExtractionService
 
         } catch (Throwable $e) {
             Log::error('AudioExtractionService: extraction failed', [
-                'video_id'  => $video->id,
-                'error'     => $e->getMessage(),
+                'video_id' => $video->id,
+                'error' => $e->getMessage(),
             ]);
 
             throw $e;
-
         } finally {
             // Always clean up temp files, even on failure.
             $this->cleanupTempDir($tempDir);
@@ -124,7 +124,7 @@ class AudioExtractionService
     private function runFFmpeg(string $inputPath, string $outputPath): void
     {
         // Resolve absolute paths in the container's filesystem.
-        $inputAbsPath  = Storage::disk(self::TEMP_DISK)->path($inputPath);
+        $inputAbsPath = Storage::disk(self::TEMP_DISK)->path($inputPath);
         $outputAbsPath = Storage::disk(self::TEMP_DISK)->path($outputPath);
 
         // Build the FFmpeg command.
@@ -132,8 +132,10 @@ class AudioExtractionService
             'ffmpeg',
             '-i', $inputAbsPath,
             '-vn',
-            '-acodec', 'mp3',
-            '-ab', '64k',
+            '-ac', '1',
+            '-ar', '16000',
+            '-af', 'highpass=f=80,lowpass=f=7800,afftdn=nf=-25',
+            '-c:a', 'flac',
             '-y', // Overwrite output file without asking
             $outputAbsPath,
         ];
@@ -152,8 +154,8 @@ class AudioExtractionService
         } catch (ProcessFailedException $e) {
             throw new RuntimeException(
                 "FFmpeg failed: {$e->getMessage()}\n"
-                . "STDOUT: {$process->getOutput()}\n"
-                . "STDERR: {$process->getErrorOutput()}"
+                ."STDOUT: {$process->getOutput()}\n"
+                ."STDERR: {$process->getErrorOutput()}"
             );
         }
 
@@ -190,7 +192,7 @@ class AudioExtractionService
         } catch (Throwable $e) {
             Log::warning('AudioExtractionService: failed to cleanup temp dir', [
                 'temp_dir' => $tempDir,
-                'error'    => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }

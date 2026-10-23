@@ -103,6 +103,44 @@ class SubtitleNormalizerServiceTest extends TestCase
         $this->assertEquals(4, $normalized[3]['index']);
     }
 
+    public function test_normalize_resolves_auto_language_to_existing_subtitle_language()
+    {
+        $video = Video::create([
+            'upload_id' => 'test-auto-lang-' . now()->timestamp,
+            'filename' => 'test.mp4',
+            'original_name' => 'test.mp4',
+            'total_chunks' => 1,
+            'status' => 'processing',
+            'target_language' => 'en',
+            'minio_path' => 'videos/test/original.mp4',
+        ]);
+
+        AudioChunk::create([
+            'video_id' => $video->id,
+            'chunk_index' => 0,
+            'start_time' => 0,
+            'path' => 'videos/test/chunks/chunk_000.mp3',
+            'status' => 'transcribed',
+        ]);
+
+        Subtitle::create([
+            'video_id' => $video->id,
+            'chunk_index' => 0,
+            'language' => 'en',
+            'raw_transcript' => [
+                ['start' => 0.0, 'end' => 2.5, 'text' => 'Hello world'],
+            ],
+            'path' => null,
+            'type' => 'original',
+            'status' => 'transcribed',
+        ]);
+
+        $normalized = $this->service->normalize($video->id, 'auto');
+
+        $this->assertCount(1, $normalized);
+        $this->assertSame('Hello world', $normalized[0]['text']);
+    }
+
     public function test_seconds_to_srt_time_format()
     {
         $this->assertEquals('00:00:00,000', $this->service->secondsToSrtTime(0));

@@ -62,6 +62,7 @@ class MergeSubtitleService
         // Get normalized segments using SubtitleNormalizerService
         // ─────────────────────────────────────────────────────────────────────────
         $normalizedSegments = $this->normalizer->normalize($videoId, $language);
+        $storedLanguage = $this->resolveStoredLanguage($videoId, $language);
 
         // ─────────────────────────────────────────────────────────────────────────
         // Validate merged timeline (check for gaps/overlaps)
@@ -88,7 +89,7 @@ class MergeSubtitleService
             [
                 'video_id' => $videoId,
                 'chunk_index' => -1,  // -1 = merged record marker
-                'language' => $language,
+                'language' => $storedLanguage,
                 'type' => $type,
             ],
             [
@@ -107,6 +108,26 @@ class MergeSubtitleService
         // ]);
 
         return $mergedSubtitle;
+    }
+
+    protected function resolveStoredLanguage(int $videoId, string $language): string
+    {
+        if ($language !== 'auto') {
+            return $language;
+        }
+
+        $detectedSubtitle = Subtitle::where('video_id', $videoId)
+            ->where('chunk_index', '>=', 0)
+            ->where('type', 'original')
+            ->whereNotNull('language')
+            ->orderBy('chunk_index')
+            ->first();
+
+        if ($detectedSubtitle && !empty($detectedSubtitle->language)) {
+            return $detectedSubtitle->language;
+        }
+
+        return 'en';
     }
 
     /**

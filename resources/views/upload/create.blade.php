@@ -83,7 +83,8 @@
         }
 
         input[type="file"],
-        input[type="text"] {
+        input[type="text"],
+        select {
             width: 100%;
             padding: 10px 14px;
             background: #0a0a0a;
@@ -96,13 +97,16 @@
         }
 
         input[type="file"]:focus,
-        input[type="text"]:focus {
+        input[type="text"]:focus,
+        select:focus {
             outline: none;
             border-color: #404040;
             box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04);
         }
 
         input[type="file"] { cursor: pointer; }
+
+        select { cursor: pointer; }
 
         input::placeholder { color: #4b5563; }
 
@@ -260,7 +264,14 @@
 
         <form action="{{ route('upload.store') }}" method="POST" enctype="multipart/form-data">
             @csrf
-            <input type="hidden" name="target_language" value="en">
+
+            <div class="form-group">
+                <label class="form-label" for="target_language">Target Subtitle Language</label>
+                <select id="target_language" name="target_language" required>
+                    <option value="en" selected>English</option>
+                </select>
+                <div class="form-hint">Choose the final subtitle language to generate for download.</div>
+            </div>
 
             <div class="form-group">
                 <label class="form-label" for="video">Video File</label>

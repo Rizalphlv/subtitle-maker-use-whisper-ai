@@ -36,15 +36,11 @@ return [
     ],
 
     'openai' => [
-        'api_key'   => env('OPENAI_API_KEY'),
-        'endpoint'  => env('OPENAI_ENDPOINT', 'https://api.openai.com/v1'),
-        'model'     => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
-    ],
-
-    'groq' => [
-        'api_key'   => env('GROQ_API_KEY'),
-        'endpoint'  => env('GROQ_ENDPOINT', 'https://api.groq.com/openai/v1'),
-        'model'     => env('GROQ_WHISPER_MODEL', 'whisper-large-v3'),
+        'api_key' => env('OPENAI_API_KEY'),
+        'endpoint' => env('OPENAI_ENDPOINT', 'https://api.openai.com/v1'),
+        'model' => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
+        'timeout' => env('OPENAI_TIMEOUT', 600),
+        'whisper_prompt' => env('OPENAI_WHISPER_PROMPT'),
     ],
 
 ];

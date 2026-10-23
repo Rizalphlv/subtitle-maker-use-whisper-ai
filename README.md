@@ -1,12 +1,12 @@
 # 🎬 Subtitle System - Video Transcription & Translation
 
-A Laravel-based system for automatically generating, translating, and downloading subtitles from video files. Built with OpenAI Whisper API for speech-to-text and GPT for translation.
+A Laravel service for translating multilingual video speech directly into timestamped English SRT subtitles with OpenAI Whisper.
 
 ## ✨ Features
 
 - **Video Upload** - Support for MP4, AVI, MOV, MKV formats (up to 5GB)
 - **Automatic Transcription** - Convert speech to text using OpenAI Whisper API
-- **Multi-Language Support** - Translate subtitles between English (EN) and Indonesian (ID)
+- **Multilingual Input** - Mandarin Chinese, Japanese, Korean, and Thai audio translated to English
 - **Parallel Processing** - Process audio chunks concurrently for faster transcription
 - **SRT Download** - Generate and download subtitles in SRT format
 - **Real-time Status Monitoring** - AJAX-based live status updates
@@ -37,7 +37,7 @@ CleanupVideoProcessingJob (verify → delete temps)
 
 ### Data Flow
 
-- **chunk_index = -1** marker for merged/translated records
+- **chunk_index = -1** marker for merged records
 - **Language handling**: Always transcribe in English first, then translate to target
 - **Empty segments**: Skip API calls for silent audio/placeholder text
 
@@ -47,7 +47,7 @@ CleanupVideoProcessingJob (verify → delete temps)
 - **Queue**: Redis-based (named queues: `default`, `transcribe`)
 - **APIs**: 
   - OpenAI Whisper (whisper-1) for speech-to-text
-  - OpenAI GPT (gpt-4o-mini) for translation
+  - OpenAI Whisper (`whisper-1`) translation endpoint for timestamped English output
 - **Storage**: MinIO (S3-compatible)
 - **Audio Processing**: FFmpeg
 - **Frontend**: Blade templates with Tailwind CSS
@@ -110,7 +110,7 @@ docker compose exec app php artisan route:cache
 ### Upload Form (`GET /upload`)
 - File input (MP4/AVI/MOV/MKV, max 5GB)
 - Optional custom filename
-- Language selector (English / Indonesian)
+- English subtitle output
 - Modern gradient styling
 
 ### Status Monitoring (`GET /upload/{uploadId}`)
@@ -140,9 +140,9 @@ docker compose exec app php artisan route:cache
   "upload_id": "784155ba-2e14-430f-8ea4-ee9de0802e0e",
   "filename": "Video Title",
   "status": "done",
-  "target_language": "id",
+  "target_language": "en",
   "en_subtitle_path": "videos/61/subtitles/en.srt",
-  "id_subtitle_path": "videos/61/subtitles/id_translated.srt",
+  "subtitle_path": "videos/61/subtitles/en.srt",
   "progress": { "transcribed": 3, "total": 3 }
 }
 ```
@@ -164,7 +164,6 @@ app/
 │   └── Subtitle.php
 └── Services/
     ├── WhisperService.php
-    ├── TranslationService.php
     ├── MergeSubtitleService.php
     ├── SrtGeneratorService.php
     ├── SubtitleNormalizerService.php
@@ -201,14 +200,14 @@ tests/Unit/  (68 tests, 197 assertions)
 docker compose exec app php artisan test tests/Unit/ --testdox
 
 # Run specific test
-docker compose exec app php artisan test tests/Unit/TranslationServiceTest.php --testdox
+docker compose exec app php artisan test tests/Feature/SubtitlePipelineTest.php --testdox
 ```
 
 **Results**: 68 tests, 197 assertions ✅
 
 ## 🎯 Processing Example
 
-**Video**: 7.6MB Netflix trailer → Indonesian subtitles
+**Video**: multilingual video → English subtitles
 
 | Step | Time | Action |
 |------|------|--------|
@@ -218,8 +217,7 @@ docker compose exec app php artisan test tests/Unit/TranslationServiceTest.php -
 | 4 | 04:54:22-39 | Parallel transcription (Whisper 3×) |
 | 5 | 04:54:46 | Merge 25 segments, verify all chunks done |
 | 6 | 04:54:46 | Generate en.srt |
-| 7 | 04:54:47-09 | Translate 25 segments to Indonesian |
-| 8 | 04:55:09 | Generate id_translated.srt, verify, cleanup |
+| 7 | 04:54:47 | Generate en.srt, verify, cleanup |
 | ✅ | ~7min | Done - ready for download |
 
 ## 🔧 Configuration
@@ -230,19 +228,17 @@ docker compose exec app php artisan test tests/Unit/TranslationServiceTest.php -
 
 ### OpenAI Models
 - Transcription: `whisper-1`
-- Translation: `gpt-4o-mini` (temperature: 0.3)
+- Translation: `whisper-1` via `/audio/translations` (`verbose_json`)
 
 ### Language Codes
 - `en` = English
-- `id` = Indonesian
 
 ### MinIO Paths
 ```
 videos/{video_id}/original.{ext}
-videos/{video_id}/audio.mp3
-videos/{video_id}/chunks/chunk_*.mp3
+videos/{upload_id}/audio.flac
+videos/{upload_id}/chunks/chunk_*.flac
 videos/{video_id}/subtitles/en.srt
-videos/{video_id}/subtitles/id_translated.srt
 ```
 
 ## 🚦 Queue Management

@@ -22,17 +22,17 @@ use Throwable;
  *  5. Clean up temporary files.
  *
  * FFmpeg command:
- *   ffmpeg -i audio.mp3 -f segment -segment_time 60 -c copy chunk_%03d.mp3
+ *   ffmpeg -i audio.flac -f segment -segment_time 120 -c copy chunk_%03d.flac
  *
  * Storage layout (MinIO):
- *   videos/{upload_id}/audio.mp3              ← input
- *   videos/{upload_id}/chunks/chunk_000.mp3   ← chunk 0 (0-60s)
- *   videos/{upload_id}/chunks/chunk_001.mp3   ← chunk 1 (60-120s)
+ *   videos/{upload_id}/audio.flac
+ *   videos/{upload_id}/chunks/chunk_000.flac
  *   ...
  */
 class AudioChunkService
 {
     private const ASSET_DISK = 'minio';
+
     private const TEMP_DISK = 'local';
 
     /** Segment duration in seconds (2 minutes). */
@@ -41,21 +41,21 @@ class AudioChunkService
     /**
      * Split audio into chunks and create database records.
      *
-     * @return array<int, AudioChunk>  Created chunks, keyed by chunk_index.
+     * @return array<int, AudioChunk> Created chunks, keyed by chunk_index.
      *
-     * @throws RuntimeException  If FFmpeg fails or uploads fail.
+     * @throws RuntimeException If FFmpeg fails or uploads fail.
      */
     public function split(Video $video, string $audioMinioPath): array
     {
         Log::info('AudioChunkService: starting split', [
-            'video_id'          => $video->id,
-            'audio_minio_path'  => $audioMinioPath,
+            'video_id' => $video->id,
+            'audio_minio_path' => $audioMinioPath,
         ]);
 
         $uploadId = $video->upload_id;
-        $tempDir  = $this->getTempDir($uploadId);
-        $inputPath  = "{$tempDir}/audio.mp3";
-        $chunkDir   = "{$tempDir}/chunks";
+        $tempDir = $this->getTempDir($uploadId);
+        $inputPath = "{$tempDir}/audio.flac";
+        $chunkDir = "{$tempDir}/chunks";
         $chunks = [];
 
         try {
@@ -69,7 +69,7 @@ class AudioChunkService
             $chunks = $this->uploadChunksAndCreateRecords($video, $chunkDir, $chunkCount);
 
             Log::info('AudioChunkService: split complete', [
-                'video_id'    => $video->id,
+                'video_id' => $video->id,
                 'chunk_count' => $chunkCount,
             ]);
 
@@ -78,11 +78,10 @@ class AudioChunkService
         } catch (Throwable $e) {
             Log::error('AudioChunkService: split failed', [
                 'video_id' => $video->id,
-                'error'    => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
 
             throw $e;
-
         } finally {
             // Always clean up temp files.
             $this->cleanupTempDir($tempDir);
@@ -119,23 +118,23 @@ class AudioChunkService
     /**
      * Execute FFmpeg to segment audio into fixed-duration chunks.
      *
-     * Command: ffmpeg -i audio.mp3 -f segment -segment_time 120 -c copy chunk_%03d.mp3
+     * Command: ffmpeg -i audio.flac -f segment -segment_time 120 -c copy chunk_%03d.flac
      *   -f segment          output format
      *   -segment_time 120   segment duration in seconds (2 minutes)
      *   -c copy             copy codec (no re-encoding, fast)
-     *   chunk_%03d.mp3      output file pattern (chunk_000.mp3, chunk_001.mp3, ...)
+     *   chunk_%03d.flac     output file pattern
      *
-     * @return int  Total number of chunks created.
+     * @return int Total number of chunks created.
      */
     private function runFFmpegSegment(string $inputPath, string $chunkDir): int
     {
         $inputAbsPath = Storage::disk(self::TEMP_DISK)->path($inputPath);
-        $chunkDirAbs  = Storage::disk(self::TEMP_DISK)->path($chunkDir);
+        $chunkDirAbs = Storage::disk(self::TEMP_DISK)->path($chunkDir);
 
         // Ensure chunk directory exists.
         @mkdir($chunkDirAbs, 0755, true);
 
-        $outputPattern = "{$chunkDirAbs}/chunk_%03d.mp3";
+        $outputPattern = "{$chunkDirAbs}/chunk_%03d.flac";
 
         $command = [
             'ffmpeg',
@@ -161,16 +160,16 @@ class AudioChunkService
         } catch (ProcessFailedException $e) {
             throw new RuntimeException(
                 "FFmpeg segment failed: {$e->getMessage()}\n"
-                . "STDERR: {$process->getErrorOutput()}"
+                ."STDERR: {$process->getErrorOutput()}"
             );
         }
 
         // Count created chunks by listing files in chunkDir.
-        $chunkFiles = glob("{$chunkDirAbs}/chunk_*.mp3");
+        $chunkFiles = glob("{$chunkDirAbs}/chunk_*.flac");
         $chunkCount = count($chunkFiles);
 
         if ($chunkCount === 0) {
-            throw new RuntimeException("FFmpeg created no chunk files.");
+            throw new RuntimeException('FFmpeg created no chunk files.');
         }
 
         Log::debug('AudioChunkService: FFmpeg segmentation complete', [
@@ -185,7 +184,7 @@ class AudioChunkService
      *
      * Chunks are uploaded in index order (guaranteed by glob on chunk_%03d naming).
      *
-     * @return array<int, AudioChunk>  Created chunks keyed by chunk_index.
+     * @return array<int, AudioChunk> Created chunks keyed by chunk_index.
      */
     private function uploadChunksAndCreateRecords(
         Video $video,
@@ -197,14 +196,14 @@ class AudioChunkService
         $chunkDirAbs = Storage::disk(self::TEMP_DISK)->path($chunkDir);
 
         for ($i = 0; $i < $chunkCount; $i++) {
-            $chunkFile = sprintf("{$chunkDirAbs}/chunk_%03d.mp3", $i);
+            $chunkFile = sprintf("{$chunkDirAbs}/chunk_%03d.flac", $i);
 
-            if (!file_exists($chunkFile)) {
+            if (! file_exists($chunkFile)) {
                 throw new RuntimeException("Missing chunk file: chunk_{$i}");
             }
 
             $startTime = $i * self::SEGMENT_DURATION;
-            $minioChunkPath = "videos/{$uploadId}/chunks/chunk_{$i}.mp3";
+            $minioChunkPath = "videos/{$uploadId}/chunks/chunk_{$i}.flac";
 
             // Upload chunk to MinIO.
             $stream = fopen($chunkFile, 'rb');
@@ -213,19 +212,19 @@ class AudioChunkService
 
             // Create AudioChunk record.
             $chunk = AudioChunk::create([
-                'video_id'   => $video->id,
+                'video_id' => $video->id,
                 'chunk_index' => $i,
-                'start_time'  => $startTime,
-                'path'        => $minioChunkPath,
-                'status'      => 'pending',
+                'start_time' => $startTime,
+                'path' => $minioChunkPath,
+                'status' => 'pending',
             ]);
 
             $chunks[$i] = $chunk;
 
             Log::debug('AudioChunkService: chunk uploaded and recorded', [
-                'chunk_index'   => $i,
-                'start_time'    => $startTime,
-                'minio_path'    => $minioChunkPath,
+                'chunk_index' => $i,
+                'start_time' => $startTime,
+                'minio_path' => $minioChunkPath,
             ]);
         }
 
@@ -242,7 +241,7 @@ class AudioChunkService
         } catch (Throwable $e) {
             Log::warning('AudioChunkService: failed to cleanup temp dir', [
                 'temp_dir' => $tempDir,
-                'error'    => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
