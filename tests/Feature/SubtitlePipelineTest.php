@@ -44,10 +44,7 @@ class SubtitlePipelineTest extends TestCase
                 'output' => [[
                     'content' => [[
                         'type' => 'output_text',
-                        'text' => json_encode(['translations' => [
-                            ['index' => 1, 'text' => 'Welcome.'],
-                            ['index' => 2, 'text' => 'Thank you.'],
-                        ]]),
+                        'text' => json_encode(['translations' => ['Welcome.', 'Thank you.']]),
                     ]],
                 ]],
             ]),

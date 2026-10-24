@@ -41,8 +41,8 @@ return [
         'model' => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
         'timeout' => env('OPENAI_TIMEOUT', 600),
         'whisper_prompt' => env('OPENAI_WHISPER_PROMPT'),
-        'translation_model' => env('OPENAI_TRANSLATION_MODEL', 'gpt-5.6-luna'),
-        'translation_batch_size' => env('OPENAI_TRANSLATION_BATCH_SIZE', 24),
+        'translation_model' => env('OPENAI_TRANSLATION_MODEL', 'gpt-4.1-mini'),
+        'translation_batch_size' => env('OPENAI_TRANSLATION_BATCH_SIZE', 8),
         'translation_context_size' => env('OPENAI_TRANSLATION_CONTEXT_SIZE', 3),
     ],
 

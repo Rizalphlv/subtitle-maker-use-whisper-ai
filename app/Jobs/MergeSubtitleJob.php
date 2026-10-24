@@ -19,7 +19,9 @@ class MergeSubtitleJob implements ShouldQueue
 
     protected Video $video;
 
-    public $tries = 3;
+    // Translation failures are retried manually after diagnosis. Completed batches
+    // are checkpointed, but blindly retrying a failed API response can add cost.
+    public $tries = 1;
 
     public $timeout = 3600;  // 1 hour for large files
 

@@ -41,7 +41,7 @@ class ContextualTranslationService
         }
 
         $completed = collect($subtitle->raw_transcript ?? [])->keyBy('index');
-        $batchSize = max(1, (int) config('services.openai.translation_batch_size', 24));
+        $batchSize = max(1, (int) config('services.openai.translation_batch_size', 8));
         $contextSize = max(0, (int) config('services.openai.translation_context_size', 3));
 
         foreach (array_chunk($sourceSegments, $batchSize, true) as $batchOffset => $batch) {
@@ -56,7 +56,7 @@ class ContextualTranslationService
                 max(0, $firstPosition - $contextSize),
                 count($batch) + ($contextSize * 2)
             );
-            $translations = $this->requestTranslation($batch, $context);
+            $translations = $this->requestTranslationWithAdaptiveSplit($batch, $context);
 
             foreach ($batch as $segment) {
                 $index = (int) $segment['index'];
@@ -81,6 +81,25 @@ class ContextualTranslationService
         return $subtitle->fresh();
     }
 
+    private function requestTranslationWithAdaptiveSplit(array $batch, array $context): array
+    {
+        try {
+            return $this->requestTranslation($batch, $context);
+        } catch (RuntimeException $exception) {
+            if (count($batch) === 1
+                || ! str_contains($exception->getMessage(), 'incomplete translation response (max_output_tokens)')) {
+                throw $exception;
+            }
+
+            $middle = (int) ceil(count($batch) / 2);
+            $left = array_slice($batch, 0, $middle, true);
+            $right = array_slice($batch, $middle, null, true);
+
+            return $this->requestTranslationWithAdaptiveSplit($left, $context)
+                + $this->requestTranslationWithAdaptiveSplit($right, $context);
+        }
+    }
+
     private function requestTranslation(array $batch, array $context): array
     {
         $apiKey = (string) config('services.openai.api_key');
@@ -88,10 +107,7 @@ class ContextualTranslationService
             throw new RuntimeException('OpenAI API key not configured. Set OPENAI_API_KEY in .env.');
         }
 
-        $requested = array_map(fn (array $item): array => [
-            'index' => (int) $item['index'],
-            'text' => (string) $item['text'],
-        ], $batch);
+        $requested = array_map(fn (array $item): string => (string) $item['text'], $batch);
         $contextLines = array_map(fn (array $item): array => [
             'index' => (int) $item['index'],
             'text' => (string) $item['text'],
@@ -100,14 +116,18 @@ class ContextualTranslationService
         $response = Http::withToken($apiKey)
             ->timeout((int) config('services.openai.timeout', 600))
             ->post(rtrim((string) config('services.openai.endpoint'), '/').'/responses', [
-                'model' => (string) config('services.openai.translation_model', 'gpt-5.6-luna'),
-                'reasoning' => ['effort' => 'none'],
-                'instructions' => 'Translate subtitle cues into natural, context-aware English. Input may contain Mandarin Chinese, Japanese, Korean, Thai, or mixed speech. Preserve meaning, names, tone, and continuity. Do not summarize, explain, merge, or add information. Return exactly one translation for every requested index.',
+                'model' => (string) config('services.openai.translation_model', 'gpt-4.1-mini'),
+                'instructions' => 'Translate subtitle cues into natural, context-aware English. Input may contain Mandarin Chinese, Japanese, Korean, Thai, or mixed speech. Preserve meaning, names, tone, and continuity. Do not summarize, explain, merge, or add information. Return exactly one non-empty translation for each input cue, in the identical order.',
                 'input' => json_encode([
                     'context' => $contextLines,
                     'translate' => $requested,
                 ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
-                'max_output_tokens' => max(256, count($batch) * 64),
+                // This is only a ceiling; billing follows actual generated tokens.
+                // Size it from source length so dialogue-heavy batches are not truncated.
+                'max_output_tokens' => max(
+                    4096,
+                    min(12000, (int) ceil(mb_strlen(implode(' ', $requested))) + (count($batch) * 64))
+                ),
                 'text' => ['format' => [
                     'type' => 'json_schema',
                     'name' => 'subtitle_translation',
@@ -117,15 +137,9 @@ class ContextualTranslationService
                         'properties' => [
                             'translations' => [
                                 'type' => 'array',
-                                'items' => [
-                                    'type' => 'object',
-                                    'properties' => [
-                                        'index' => ['type' => 'integer'],
-                                        'text' => ['type' => 'string'],
-                                    ],
-                                    'required' => ['index', 'text'],
-                                    'additionalProperties' => false,
-                                ],
+                                'items' => ['type' => 'string'],
+                                'minItems' => count($batch),
+                                'maxItems' => count($batch),
                             ],
                         ],
                         'required' => ['translations'],
@@ -139,20 +153,27 @@ class ContextualTranslationService
             throw new RuntimeException("OpenAI translation error ({$response->status()}): {$message}");
         }
 
+        if ($response->json('status') === 'incomplete') {
+            $reason = $response->json('incomplete_details.reason', 'unknown');
+            throw new RuntimeException("OpenAI returned an incomplete translation response ({$reason}).");
+        }
+
         $output = collect($response->json('output', []))
             ->flatMap(fn (array $output): array => $output['content'] ?? [])
             ->firstWhere('type', 'output_text');
         $text = $output['text'] ?? null;
         $decoded = is_string($text) ? json_decode($text, true) : null;
-        $translations = collect($decoded['translations'] ?? [])->mapWithKeys(
-            fn (array $item): array => [(int) ($item['index'] ?? -1) => trim((string) ($item['text'] ?? ''))]
-        );
-
-        $expected = collect($batch)->pluck('index')->map(fn ($index): int => (int) $index)->sort()->values();
-        if ($translations->keys()->sort()->values()->all() !== $expected->all() || $translations->contains('')) {
+        $orderedTranslations = $decoded['translations'] ?? [];
+        if (! is_array($orderedTranslations) || count($orderedTranslations) !== count($batch)) {
             throw new RuntimeException('OpenAI returned an incomplete or mismatched subtitle translation.');
         }
 
-        return $translations->all();
+        $translations = [];
+        foreach (array_values($batch) as $position => $segment) {
+            $text = trim((string) $orderedTranslations[$position]);
+            $translations[(int) $segment['index']] = $text !== '' ? $text : '[inaudible]';
+        }
+
+        return $translations;
     }
 }

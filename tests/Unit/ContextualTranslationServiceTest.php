@@ -24,9 +24,7 @@ class ContextualTranslationServiceTest extends TestCase
             'https://api.openai.test/v1/responses' => Http::response([
                 'output' => [['content' => [[
                     'type' => 'output_text',
-                    'text' => json_encode(['translations' => [
-                        ['index' => 1, 'text' => 'Good morning.'],
-                    ]]),
+                    'text' => json_encode(['translations' => ['Good morning.']]),
                 ]]]],
             ]),
         ]);
