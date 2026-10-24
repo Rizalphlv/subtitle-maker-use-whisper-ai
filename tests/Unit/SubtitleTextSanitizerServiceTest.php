@@ -19,8 +19,39 @@ class SubtitleTextSanitizerServiceTest extends TestCase
     {
         $this->assertSame('[vocalization]', $this->sanitizer->sanitize(str_repeat('Ah... ', 20)));
         $this->assertSame('[vocalization]', $this->sanitizer->sanitize('Ahhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh...'));
+        $this->assertSame('[vocalization]', $this->sanitizer->sanitize(str_repeat('U', 80)));
+        $this->assertSame('[vocalization]', $this->sanitizer->sanitize(str_repeat('E', 80)));
+        $this->assertSame('[vocalization]', $this->sanitizer->sanitize(str_repeat('ㅋ', 30)));
+        $this->assertSame('[vocalization]', $this->sanitizer->sanitize(str_repeat('A', 80).'�'));
         $this->assertSame('Ah, it feels good.', $this->sanitizer->sanitize('Ah, it feels good.'));
         $this->assertSame('Oh, I see.', $this->sanitizer->sanitize('Oh, I see.'));
+        $this->assertSame(
+            "I was not afraid of you.\n[vocalization]",
+            $this->sanitizer->sanitize(
+                "I was not afraid of you.\n".str_repeat('U', 80)."\n".str_repeat('E', 80)
+            )
+        );
+    }
+
+    public function test_it_compacts_only_long_repeated_breathing(): void
+    {
+        $this->assertSame('[breathing]', $this->sanitizer->sanitize(str_repeat('Exhale, ', 20)));
+        $this->assertSame('[breathing]', $this->sanitizer->sanitize(str_repeat('Exhaling, ', 10)));
+        $this->assertSame('[breathing]', $this->sanitizer->sanitize('Inhale, '.str_repeat('exhale, ', 10)));
+        $this->assertSame('I need to exhale slowly.', $this->sanitizer->sanitize('I need to exhale slowly.'));
+    }
+
+    public function test_it_removes_standalone_boilerplate_only_from_suspiciously_long_cues(): void
+    {
+        $this->assertSame('[inaudible]', $this->sanitizer->sanitize('Thank you for watching.', 30));
+        $this->assertSame('[inaudible]', $this->sanitizer->sanitize('by H.', 29.95));
+        $this->assertSame('[inaudible]', $this->sanitizer->sanitize('by H.', 0.5));
+        $this->assertSame('Thank you for watching.', $this->sanitizer->sanitize('Thank you for watching.', 3));
+        $this->assertSame(
+            'Thank you for watching the presentation.',
+            $this->sanitizer->sanitize('Thank you for watching the presentation.', 30)
+        );
+        $this->assertSame('He said, "Ah, I understand."', $this->sanitizer->sanitize('He said, "Ah, I understand."'));
     }
 
     public function test_it_removes_known_editorial_artifacts_without_touching_dialogue(): void

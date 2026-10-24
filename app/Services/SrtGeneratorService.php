@@ -152,7 +152,11 @@ class SrtGeneratorService
             $lines[] = "{$startTime} --> {$endTime}";
 
             // Text content (split multi-line text)
-            $textLines = explode("\n", $this->sanitizer->sanitize((string) $segment['text']));
+            $durationSeconds = max(0.0, (float) $segment['end'] - (float) $segment['start']);
+            $textLines = explode("\n", $this->sanitizer->sanitize(
+                (string) $segment['text'],
+                $durationSeconds
+            ));
             foreach ($textLines as $textLine) {
                 $lines[] = trim($textLine);
             }
