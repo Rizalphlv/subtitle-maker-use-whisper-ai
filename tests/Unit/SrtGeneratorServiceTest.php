@@ -6,6 +6,7 @@ use App\Models\Subtitle;
 use App\Models\Video;
 use App\Services\SrtGeneratorService;
 use App\Services\SubtitleNormalizerService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -15,12 +16,13 @@ class SrtGeneratorServiceTest extends TestCase
     use RefreshDatabase;
 
     protected SrtGeneratorService $service;
+
     protected SubtitleNormalizerService $normalizer;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->normalizer = new SubtitleNormalizerService();
+        $this->normalizer = new SubtitleNormalizerService;
         $this->service = new SrtGeneratorService($this->normalizer);
 
         // Mock MinIO storage
@@ -46,6 +48,25 @@ class SrtGeneratorServiceTest extends TestCase
         $this->assertStringContainsString('2', $content);
         $this->assertStringContainsString('00:00:02,500 --> 00:00:05,000', $content);
         $this->assertStringContainsString('This is a test', $content);
+    }
+
+    public function test_generate_sanitizes_text_without_changing_timestamps(): void
+    {
+        $video = $this->createVideoWithSubtitle();
+        $subtitle = Subtitle::where('video_id', $video->id)
+            ->where('chunk_index', -1)
+            ->firstOrFail();
+        $segments = $subtitle->raw_transcript;
+        $segments[0]['text'] = str_repeat('Ah... ', 20);
+        $segments[1]['text'] = 'Whoa! (continued)';
+        $subtitle->update(['raw_transcript' => $segments]);
+
+        $path = $this->service->generate($video->id, 'en', 'original');
+        $content = Storage::disk('minio')->get($path);
+
+        $this->assertStringContainsString("00:00:00,000 --> 00:00:02,500\n[vocalization]", $content);
+        $this->assertStringContainsString("00:00:02,500 --> 00:00:05,000\nWhoa!", $content);
+        $this->assertStringNotContainsString('(continued)', $content);
     }
 
     public function test_generate_creates_correct_srt_structure()
@@ -170,7 +191,7 @@ class SrtGeneratorServiceTest extends TestCase
     public function test_generate_fails_without_segments()
     {
         $video = Video::create([
-            'upload_id' => 'test-no-segments-' . now()->timestamp,
+            'upload_id' => 'test-no-segments-'.now()->timestamp,
             'filename' => 'test.mp4',
             'original_name' => 'test.mp4',
             'total_chunks' => 1,
@@ -199,7 +220,7 @@ class SrtGeneratorServiceTest extends TestCase
     public function test_generate_requires_merged_subtitle()
     {
         $video = Video::create([
-            'upload_id' => 'test-no-merged-' . now()->timestamp,
+            'upload_id' => 'test-no-merged-'.now()->timestamp,
             'filename' => 'test.mp4',
             'original_name' => 'test.mp4',
             'total_chunks' => 1,
@@ -208,7 +229,7 @@ class SrtGeneratorServiceTest extends TestCase
             'minio_path' => 'videos/test/original.mp4',
         ]);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
         $this->service->generate($video->id, 'en', 'original');
     }
@@ -252,7 +273,7 @@ class SrtGeneratorServiceTest extends TestCase
     public function test_generate_handles_millisecond_precision()
     {
         $video = Video::create([
-            'upload_id' => 'test-millis-' . now()->timestamp,
+            'upload_id' => 'test-millis-'.now()->timestamp,
             'filename' => 'test.mp4',
             'original_name' => 'test.mp4',
             'total_chunks' => 1,
@@ -301,7 +322,7 @@ class SrtGeneratorServiceTest extends TestCase
     protected function createVideoWithSubtitle(): Video
     {
         $video = Video::create([
-            'upload_id' => 'test-srt-' . now()->timestamp,
+            'upload_id' => 'test-srt-'.now()->timestamp,
             'filename' => 'test.mp4',
             'original_name' => 'test.mp4',
             'total_chunks' => 1,

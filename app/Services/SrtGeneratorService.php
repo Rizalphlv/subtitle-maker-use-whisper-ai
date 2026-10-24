@@ -12,9 +12,14 @@ class SrtGeneratorService
 {
     protected SubtitleNormalizerService $normalizer;
 
-    public function __construct(SubtitleNormalizerService $normalizer)
-    {
+    protected SubtitleTextSanitizerService $sanitizer;
+
+    public function __construct(
+        SubtitleNormalizerService $normalizer,
+        ?SubtitleTextSanitizerService $sanitizer = null,
+    ) {
         $this->normalizer = $normalizer;
+        $this->sanitizer = $sanitizer ?? new SubtitleTextSanitizerService;
     }
 
     /**
@@ -147,7 +152,7 @@ class SrtGeneratorService
             $lines[] = "{$startTime} --> {$endTime}";
 
             // Text content (split multi-line text)
-            $textLines = explode("\n", $segment['text']);
+            $textLines = explode("\n", $this->sanitizer->sanitize((string) $segment['text']));
             foreach ($textLines as $textLine) {
                 $lines[] = trim($textLine);
             }
