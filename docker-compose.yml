@@ -86,6 +86,23 @@ services:
       - mysql
       - redis
 
+  audio_queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: subtitle_audio_queue
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command: php artisan queue:work audio_subtitles --sleep=3 --tries=10 --timeout=7200 --queue=audio-subtitles
+    volumes:
+      - .:/var/www/html
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - subtitle_net
+    depends_on:
+      - mysql
+      - redis
+
 volumes:
   mysql_data:
   redis_data:

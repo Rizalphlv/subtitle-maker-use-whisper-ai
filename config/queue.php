@@ -73,6 +73,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Isolated connection for long-running mobile audio jobs. Keeping this
+        // separate avoids changing retry semantics for the existing Web UI.
+        'audio_subtitles' => [
+            'driver' => 'redis',
+            'connection' => env('SUBTITLE_AUDIO_REDIS_CONNECTION', 'default'),
+            'queue' => env('SUBTITLE_AUDIO_QUEUE', 'audio-subtitles'),
+            'retry_after' => (int) env('SUBTITLE_AUDIO_QUEUE_RETRY_AFTER', 7800),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

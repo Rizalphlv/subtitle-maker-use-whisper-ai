@@ -22,7 +22,7 @@ use Throwable;
  *  5. Clean up temporary files.
  *
  * FFmpeg command:
- *   ffmpeg -i audio.flac -f segment -segment_time 120 -c copy chunk_%03d.flac
+ *   ffmpeg -i audio -f segment -segment_time 120 -c:a flac chunk_%03d.flac
  *
  * Storage layout (MinIO):
  *   videos/{upload_id}/audio.flac
@@ -118,10 +118,10 @@ class AudioChunkService
     /**
      * Execute FFmpeg to segment audio into fixed-duration chunks.
      *
-     * Command: ffmpeg -i audio.flac -f segment -segment_time 120 -c copy chunk_%03d.flac
+     * Command: ffmpeg -i audio -f segment -segment_time 120 -c:a flac chunk_%03d.flac
      *   -f segment          output format
      *   -segment_time 120   segment duration in seconds (2 minutes)
-     *   -c copy             copy codec (no re-encoding, fast)
+     *   -c:a flac           normalize every supported input codec to real FLAC
      *   chunk_%03d.flac     output file pattern
      *
      * @return int Total number of chunks created.
@@ -141,7 +141,7 @@ class AudioChunkService
             '-i', $inputAbsPath,
             '-f', 'segment',
             '-segment_time', (string) self::SEGMENT_DURATION,
-            '-c', 'copy',
+            '-c:a', 'flac',
             '-y', // Overwrite without asking
             $outputPattern,
         ];
@@ -210,14 +210,18 @@ class AudioChunkService
             Storage::disk(self::ASSET_DISK)->writeStream($minioChunkPath, $stream);
             fclose($stream);
 
-            // Create AudioChunk record.
-            $chunk = AudioChunk::create([
+            // Retry-safe persistence. Preserve completed transcription work;
+            // pending/failed records can safely point at the regenerated object.
+            $chunk = AudioChunk::firstOrNew([
                 'video_id' => $video->id,
                 'chunk_index' => $i,
-                'start_time' => $startTime,
-                'path' => $minioChunkPath,
-                'status' => 'pending',
             ]);
+            $chunk->start_time = $startTime;
+            $chunk->path = $minioChunkPath;
+            if ($chunk->status !== 'transcribed') {
+                $chunk->status = 'pending';
+            }
+            $chunk->save();
 
             $chunks[$i] = $chunk;
 
@@ -227,6 +231,10 @@ class AudioChunkService
                 'minio_path' => $minioChunkPath,
             ]);
         }
+
+        // Written only after every expected object and row has succeeded, so a
+        // non-zero value is a durable marker for a complete reusable chunk set.
+        $video->update(['total_chunks' => $chunkCount]);
 
         return $chunks;
     }
