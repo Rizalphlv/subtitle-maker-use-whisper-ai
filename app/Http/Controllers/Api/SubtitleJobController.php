@@ -9,8 +9,10 @@ use App\Models\SubtitleJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 class SubtitleJobController extends Controller
@@ -83,15 +85,9 @@ class SubtitleJobController extends Controller
             ->where('api_client_id', $request->attributes->get('api_client')->id)
             ->firstOrFail();
 
-        $expiresAt = null;
         $downloadUrl = null;
         if ($job->status === 'completed' && $job->output_path) {
-            $expiresAt = now()->addMinutes((int) config('subtitle_api.signed_url_minutes'));
-            $downloadUrl = Storage::disk((string) config('subtitle_api.presign_disk'))->temporaryUrl(
-                $job->output_path,
-                $expiresAt,
-                ['ResponseContentDisposition' => 'attachment; filename="'.pathinfo($job->input_filename, PATHINFO_FILENAME).'.srt"']
-            );
+            $downloadUrl = route('api.subtitle-jobs.download', ['jobId' => $job->job_id], false);
         }
 
         $response = [
@@ -99,12 +95,92 @@ class SubtitleJobController extends Controller
             'status' => $job->status,
             'stage' => $job->stage,
             'download_url' => $downloadUrl,
-            'expires_at' => $expiresAt?->utc()->toIso8601String(),
+            'expires_at' => null,
         ];
         if ($job->status === 'failed') {
             $response['error'] = ['code' => $job->error_code ?: 'PROCESSING_FAILED', 'message' => 'Subtitle generation could not be completed.'];
         }
 
         return response()->json($response);
+    }
+
+    public function download(Request $request, string $jobId): Response
+    {
+        $job = SubtitleJob::where('job_id', $jobId)
+            ->where('api_client_id', $request->attributes->get('api_client')->id)
+            ->first();
+
+        if (! $job) {
+            return response()->json(['message' => 'The subtitle job was not found.'], 404);
+        }
+
+        if ($job->status !== 'completed') {
+            return response()->json([
+                'message' => $job->status === 'failed'
+                    ? 'The subtitle job did not complete successfully.'
+                    : 'The subtitle file is not ready for download.',
+            ], 409);
+        }
+
+        if (! $job->output_path) {
+            return response()->json(['message' => 'The subtitle file was not found.'], 404);
+        }
+
+        $diskName = $job->output_disk ?: (string) config('subtitle_api.output_disk');
+
+        try {
+            $disk = Storage::disk($diskName);
+            if (! $disk->exists($job->output_path)) {
+                return response()->json(['message' => 'The subtitle file was not found.'], 404);
+            }
+
+            $stream = $disk->readStream($job->output_path);
+            if (! is_resource($stream)) {
+                throw new \RuntimeException('Subtitle output could not be opened as a stream.');
+            }
+        } catch (Throwable $e) {
+            Log::warning('Subtitle download storage read failed.', [
+                'job_id' => $job->job_id,
+                'exception' => $e::class,
+            ]);
+
+            return response()->json(['message' => 'The subtitle file is temporarily unavailable.'], 503);
+        }
+
+        return response()->streamDownload(function () use ($stream, $job): void {
+            try {
+                while (! feof($stream)) {
+                    $chunk = fread($stream, 8192);
+                    if ($chunk === false) {
+                        throw new \RuntimeException('Subtitle stream could not be read.');
+                    }
+
+                    echo $chunk;
+                }
+            } catch (Throwable $e) {
+                Log::warning('Subtitle download stream interrupted.', [
+                    'job_id' => $job->job_id,
+                    'exception' => $e::class,
+                ]);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+        }, $this->downloadFilename($job->input_filename), [
+            'Content-Type' => 'application/x-subrip; charset=UTF-8',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    private function downloadFilename(?string $inputFilename): string
+    {
+        $basename = basename(str_replace('\\', '/', (string) $inputFilename));
+        $stem = pathinfo($basename, PATHINFO_FILENAME);
+        $stem = preg_replace('/[^A-Za-z0-9._-]+/', '-', $stem) ?: '';
+        $stem = trim(preg_replace('/-+/', '-', $stem) ?: '', '.-_');
+
+        return ($stem !== '' ? $stem : 'subtitle').'.srt';
     }
 }

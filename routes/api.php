@@ -6,6 +6,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->middleware(['api.client', 'throttle:subtitle-api'])->group(function () {
     Route::post('/subtitle-jobs', [SubtitleJobController::class, 'store']);
+    Route::get('/subtitle-jobs/{jobId}/download', [SubtitleJobController::class, 'download'])
+        ->where('jobId', 'sub_[A-Za-z0-9_-]+')
+        ->name('api.subtitle-jobs.download');
     Route::get('/subtitle-jobs/{jobId}', [SubtitleJobController::class, 'show'])->where('jobId', 'sub_[A-Za-z0-9_-]+');
 });
 
